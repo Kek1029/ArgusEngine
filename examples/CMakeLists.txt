@@ -1,0 +1,10 @@
+
+file(GLOB ENTRIES RELATIVE ${CMAKE_CURRENT_SOURCE_DIR} *)
+
+foreach(ENTRY ${ENTRIES})
+    set(CURRENT_ENTRY_PATH ${CMAKE_CURRENT_SOURCE_DIR}/${ENTRY})
+
+    if(IS_DIRECTORY ${CURRENT_ENTRY_PATH} AND EXISTS ${CURRENT_ENTRY_PATH}/CMakeLists.txt)
+        add_subdirectory(${ENTRY})
+    endif()
+endforeach()

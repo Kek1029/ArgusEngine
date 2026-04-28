@@ -1,0 +1,3 @@
+[submodule "deps/FastBin"]
+	path = deps/FastBin
+	url = https://github.com/Kek1029/FastBin.git

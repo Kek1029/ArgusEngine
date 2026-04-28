@@ -1,0 +1,5 @@
+build
+.idea
+
+vcpkg_installed/
+.vcpkg-root
