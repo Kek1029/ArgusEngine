@@ -3,3 +3,5 @@ build
 
 vcpkg_installed/
 .vcpkg-root
+
+stats.json
