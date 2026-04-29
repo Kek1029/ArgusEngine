@@ -2,7 +2,6 @@
 
 namespace ArgusEngine::Engine {
 
-    // TODO: выкинуть std::array к чертям
     template<std::size_t... Is>
     constexpr std::array<CommandBuffer::ApplyFunc, CommandBuffer::TABLE_SIZE>
     init_jump_table(std::index_sequence<Is...>) {
@@ -31,7 +30,7 @@ namespace ArgusEngine::Engine {
         while (ptr < end) {
             if (ptr + sizeof(CommandHeader) > end) break;
 
-            __builtin_prefetch(ptr + 128, 0, 3);
+            //__builtin_prefetch(ptr + 128, 0, 3);
 
             CommandHeader* h = reinterpret_cast<CommandHeader*>(ptr);
             auto func = jump_table[h->p_idx];

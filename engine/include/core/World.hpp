@@ -102,7 +102,6 @@ namespace ArgusEngine::Engine {
         void update_systems(const float dt, F&& systemFunc) {
             currentFrame++;
 
-            // Вьюха теперь собирает только нужные компоненты
             auto view = reg.view<Tn...>();
 
             view.each(js, [&](Memory::Entity e, Tn&... comps) {
