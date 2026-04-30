@@ -17,16 +17,21 @@
 #endif
 
 #include "utils/Utils.hpp"
-
+#include <atomic>
+#include <mutex>
 namespace ArgusEngine::Memory {
 
 template <typename T>
 class VirtualLinearAllocator {
 private:
     T* base_ptr = nullptr;
-    size_t committed_size = 0;
+    std::atomic<size_t> committed_size{0};
     size_t reserved_cap = 0;
     size_t page_size = 0;
+
+
+    std::mutex commit_mutex;
+    std::atomic<size_t> last_mapped_bytes{0};
 
     size_t align_to_page(size_t size) const {
         if (page_size == 0) return size;
@@ -72,7 +77,7 @@ public:
     VirtualLinearAllocator& operator=(const VirtualLinearAllocator&) = delete;
 
     VirtualLinearAllocator(VirtualLinearAllocator&& other) noexcept
-        : base_ptr(other.base_ptr), committed_size(other.committed_size),
+        : base_ptr(other.base_ptr), committed_size(other.committed_size.load(std::memory_order_relaxed)),
           reserved_cap(other.reserved_cap), page_size(other.page_size) {
         other.base_ptr = nullptr;
         other.committed_size = 0;
@@ -82,7 +87,7 @@ public:
         if (this != &other) {
             this->~VirtualLinearAllocator();
             base_ptr = other.base_ptr;
-            committed_size = other.committed_size;
+            committed_size = other.committed_size.load(std::memory_order_relaxed);
             reserved_cap = other.reserved_cap;
             page_size = other.page_size;
             other.base_ptr = nullptr;
@@ -104,28 +109,33 @@ public:
     T* alloc(size_t n) {
         if (!base_ptr || n == 0) return nullptr;
 
-        size_t new_size = committed_size + n;
+        size_t old_size = committed_size.fetch_add(n, std::memory_order_relaxed);
+        size_t new_size = old_size + n;
+
         if (new_size > reserved_cap) {
-            std::cerr << "Out of reserved virtual memory!" << std::endl;
-            return nullptr;
+            fprintf(stderr, "Out of Memory! %s\n", __PRETTY_FUNCTION__);
+            std::abort();
         }
 
         size_t needed_bytes = new_size * sizeof(T);
-        size_t current_mapped_bytes = align_to_page(committed_size * sizeof(T));
 
-        if (needed_bytes > current_mapped_bytes) {
-            size_t start_offset = current_mapped_bytes;
-            size_t end_offset = align_to_page(needed_bytes);
-            size_t bytes_to_commit = end_offset - start_offset;
+        if (needed_bytes > last_mapped_bytes.load(std::memory_order_acquire)) {
+            std::lock_guard<std::mutex> lock(commit_mutex);
 
-            void* commit_addr = (char*)base_ptr + start_offset;
+            if (needed_bytes > last_mapped_bytes.load(std::memory_order_relaxed)) {
+                size_t current_mapped = last_mapped_bytes.load(std::memory_order_relaxed);
+                size_t end_offset = align_to_page(needed_bytes);
+                size_t bytes_to_commit = end_offset - current_mapped;
 
-            FastBin::CommitMemory(commit_addr, bytes_to_commit);
+                void* commit_addr = (char*)base_ptr + current_mapped;
+
+                FastBin::CommitMemory(commit_addr, bytes_to_commit);
+
+                last_mapped_bytes.store(end_offset, std::memory_order_release);
+            }
         }
 
-        T* ptr = base_ptr + committed_size;
-        committed_size = new_size;
-        return ptr;
+        return base_ptr + old_size;
     }
 
     void push_back(const T& value) {
@@ -133,7 +143,7 @@ public:
         *ptr = value;
     }
 
-    size_t size() const { return committed_size; }
+    size_t size() const { return committed_size.load(std::memory_order_relaxed); }
     ~VirtualLinearAllocator() {
         if (!base_ptr) return;
         size_t total_bytes = align_to_page(reserved_cap * sizeof(T));
@@ -142,6 +152,30 @@ public:
 #else
         munmap(base_ptr, total_bytes);
 #endif
+    }
+
+    void clear() noexcept {
+        committed_size.store(0, std::memory_order_relaxed);
+    }
+
+    void fit() {
+        if (!base_ptr || committed_size == 0) return;
+
+        size_t used_bytes = align_to_page(committed_size * sizeof(T));
+        size_t total_reserver_bytes = align_to_page(reserved_cap * sizeof(T));
+
+        if (used_bytes < total_reserver_bytes) {
+
+            void* decommit_addr = (char*)base_ptr + used_bytes;
+            size_t decommit_size = total_reserver_bytes - used_bytes;
+
+#ifdef _WIN32
+            VirtualFree(decommit_addr, decommit_size, MEM_DECOMMIT);
+#else
+            madvise(decommit_addr, decommit_size, MADV_DONTNEED);
+#endif
+
+        }
     }
 };
 

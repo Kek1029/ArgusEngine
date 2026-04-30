@@ -36,10 +36,8 @@ namespace ArgusEngine::Engine {
         using ApplyFunc = void(*)(WorldRegistry&, TileSparesSet&, Memory::Entity, Op, uint8_t*);
 
         CommandBuffer(WorldRegistry& reg, TileSparesSet& tiles)
-            : reg(reg), tilespares(tiles) {
-            // TODO: сделать все на виртуальной памяти mmap
-            cmdBuffers[0].reserve(512 * 1024 * 1024);
-            cmdBuffers[1].reserve(512 * 1024 * 1024);
+        : reg(reg), tilespares(tiles), cmdBuffers{Memory::VirtualLinearAllocator<uint8_t>(4ULL * 1024 * 1024 * 1024),
+             Memory::VirtualLinearAllocator<uint8_t>(4ULL * 1024 * 1024 * 1024)}{
         }
 
         void submit();
@@ -112,7 +110,7 @@ namespace ArgusEngine::Engine {
     private:
         WorldRegistry& reg;
         TileSparesSet& tilespares;
-        Memory::LinearAllocator<uint8_t> cmdBuffers[2];
+        Memory::VirtualLinearAllocator<uint8_t> cmdBuffers[2];
         uint8_t active = 0;
 
         void enqueue_raw(size_t p_idx, Memory::Entity ent, Op op, uint16_t sz, const void* data) {
@@ -121,7 +119,7 @@ namespace ArgusEngine::Engine {
 
             // выравнивание по 16
             size_t aligned_size = (sizeof(CommandHeader) + sz + 15) & ~15;
-            uint8_t* dst = buffer.atomic_alloc(aligned_size);
+            uint8_t* dst = buffer.alloc(aligned_size);
             if (!dst) return;
 
             CommandHeader* h = reinterpret_cast<CommandHeader*>(dst);

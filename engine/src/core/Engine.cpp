@@ -141,28 +141,97 @@ void Engine::render() {}
 void Engine::destroy() {}
 void Engine::printStats() {}*/
 
-    Engine::Engine() {
 
+} // namespace ArgusEngine::Engine
+
+#include "core/Engine.hpp"
+#include <random>
+
+namespace ArgusEngine::Engine {
+
+constexpr int ENTITY_COUNT = 10'000'000;
+static glm::vec3 g_AttractorPos = {0.0f, 50.0f, 0.0f};
+
+Engine::Engine() {
+}
+
+void Engine::start() {
+    std::mt19937 gen(42);
+    std::uniform_real_distribution<float> posDist(-500.0f, 500.0f);
+    std::uniform_real_distribution<float> velDist(-10.0f, 10.0f);
+    for (int i = 0; i < ENTITY_COUNT; ++i) {
+        auto e = world.create_entity();
+
+        glm::vec3 pos = {posDist(gen), 20.0f + posDist(gen) * 0.1f, posDist(gen)};
+        glm::vec3 vel = {velDist(gen), 0.0f, velDist(gen)};
+
+        int32_t tx = static_cast<int32_t>(std::floor(pos.x / 64.0f));
+        int32_t tz = static_cast<int32_t>(std::floor(pos.z / 64.0f));
+
+        Component_Transform t;
+        t.template Set<1>(Math::Vector3Fixed<24>(pos.x - (tx * 64.0f), pos.y, pos.z - (tz * 64.0f)));
+        t.template Set<5>(tx);
+        t.template Set<6>(tz);
+        t.template Set<3>(Math::Vector3Fixed<24>(1.0f, 1.0f, 1.0f)); // Scale
+
+        Component_PhysicsBody p;
+        p.template Set<0>(Math::Vector3Fixed<24>(vel.x, vel.y, vel.z));
+        p.template Set<2>(Math::Fixed32(1.0f));
+
+        world.at(e)
+            .add<Component_Transform>(t)
+            .add<Component_PhysicsBody>(p);
     }
 
-    void Engine::start() {
+    world.sync();
+}
 
-    }
+void Engine::update(float dt) {
+    static float time = 0;
+    time += dt;
+    g_AttractorPos.x = std::sin(time) * 100.0f;
+    g_AttractorPos.z = std::cos(time) * 100.0f;
 
-    void Engine::update(float dt) {
-
-    }
+}
 
     void Engine::fixedUpdate() {
+    float dt = 0.016f;
 
-    }
+    world.update_systems<Component_Transform, Component_PhysicsBody>(
+        dt,
+        [](auto&& trans, Component_PhysicsBody& phys, float delta) {
+            glm::vec3 pos = trans.get();
+            auto rawVel = phys.template Get<0>();
+            glm::vec3 vel(rawVel.x.to_float(), rawVel.y.to_float(), rawVel.z.to_float());
 
-    void Engine::render() {
+            float forceField = std::sin(pos.x * 0.1f) + std::cos(pos.z * 0.1f);
+            vel.y += forceField * 5.0f * delta;
 
-    }
+            float resistance = std::sqrt(pos.x * pos.x + pos.z * pos.z + 1.0f);
+            vel *= (1.0f - (0.01f / resistance));
 
-    void Engine::destroy() {
+            if (std::abs(pos.x) > 1000.0f) { vel.x *= -1.1f; pos.x = std::clamp(pos.x, -1000.0f, 1000.0f); }
+            if (std::abs(pos.z) > 1000.0f) { vel.z *= -1.1f; pos.z = std::clamp(pos.z, -1000.0f, 1000.0f); }
 
-    }
+            pos += vel * delta;
+
+            if (pos.y < 0.0f) {
+                pos.y = 0.0f;
+                vel.y *= -0.8f;
+            }
+
+            phys.template Set<0>(Math::Vector3Fixed<24>(vel.x, vel.y, vel.z));
+            trans.set(pos);
+        }
+    );
+
+    world.sync();
+}
+
+void Engine::render() {
+}
+
+void Engine::destroy() {
+}
 
 } // namespace ArgusEngine::Engine

@@ -50,7 +50,6 @@ public:
     uint8_t id = 0;
 
     PoolAllocator() :
-    chunks(1024 * 64),
     free_chunks_indices(128),
     entity_to_handle(1024),
     slot_to_entity(64)
